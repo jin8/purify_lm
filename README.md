@@ -1,4 +1,5 @@
 1.데이터 다운받고
+아래에 [설명](https://github.com/jin8/purify_lm/blob/main/README.md#downloading-the-original-data-and-models-from-our-paper) 참조
 
 2.현재 실행가능한 스크립
 ```
