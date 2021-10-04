@@ -1,3 +1,13 @@
+1.데이터 다운받고
+2.현재 실행가능한 스크립
+```
+>> sh pplm_generate.py
+>> sh gpt2_generate.py
+>> sh scripts/our_scripts/finetuning/finetune_contrastive.sh
+>> sh scripts/our_scripts/finetuning/finetune_contrastive.sh
+>> sh scripts/our_scripts/training/train_pplm_discriminator.sh
+```
+------------------------------------------------------------------------------
 # DExperts
 Hi! This repository contains code for the paper [DExperts: Decoding-Time Controlled Text Generation with Experts and Anti-Experts](https://arxiv.org/abs/2105.03023) to appear at ACL 2021. If you have any questions, please feel free to create a Github issue or reach out to the first author at alisaliu@cs.washington.edu. 
 
