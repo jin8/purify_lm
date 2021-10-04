@@ -94,11 +94,12 @@ class ContrastiveGPT2(GPT2LMHeadModel):
 
         self.supervised = config.supervised
 
-    def gather(self, z1, z2):
+    def gather(self, z1, z2, labels=None):
         # Gather all embeddings if using distributed training
         # Dummy vectors for allgather
         z1_list = [torch.zeros_like(z1) for _ in range(dist.get_world_size())]
         z2_list = [torch.zeros_like(z2) for _ in range(dist.get_world_size())]
+
         # Allgather
         dist.all_gather(tensor_list=z1_list, tensor=z1.contiguous())
         dist.all_gather(tensor_list=z2_list, tensor=z2.contiguous())
@@ -110,7 +111,15 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         # Get full batch embeddings: (bs x N, hidden)
         z1 = torch.cat(z1_list, 0)
         z2 = torch.cat(z2_list, 0)
-        return z1, z2
+        if labels is not None:
+            labels_list = [torch.zeros_like(labels) for _ in range(dist.get_world_size())]
+            dist.all_gather(tensor_list=labels_list, tensor=labels.contiguous())
+            labels_list[dist.get_rank()] = labels
+            labels = torch.cat(labels_list, 0)
+            return z1, z2, labels
+
+        else:
+            return z1, z2
 
     def sup_contrastive_loss(self, z1, z2, labels, temperature=0.07, contrast_mode='all',
                  base_temperature=0.07):
@@ -222,13 +231,14 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             z1 = mlp_output[:, 0]
             z2 = mlp_output[:, 1]
 
-            if dist.is_initialized() and self.training:
-                z1, z2 = self.gather(z1, z2)
             if self.supervised:
+                if dist.is_initialized() and self.training:
+                    z1, z2, attr_labels = self.gather(z1, z2, attr_labels)
                 cos_loss = self.sup_contrastive_loss(z1, z2, attr_labels)
             else:
+                if dist.is_initialized() and self.training:
+                    z1, z2 = self.gather(z1, z2)
                 cos_loss = self.self_contrastive_loss(z1, z2)
-
             loss_fct = nn.CrossEntropyLoss()
 
             # Shift so that tokens < n predict n
