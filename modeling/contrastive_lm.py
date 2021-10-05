@@ -161,7 +161,8 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             0
         )
         mask = mask * logits_mask
-
+        import pdb
+        pdb.set_trace()
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
@@ -172,6 +173,7 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         # loss
         loss = - (temperature / base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
+
         return loss
 
     def self_contrastive_loss(self, z1, z2):
