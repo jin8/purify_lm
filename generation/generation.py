@@ -20,10 +20,55 @@ from gpt2_generation import GPT2Generation
 from dexperts_generation import DExpertsGeneration
 from dexperts_gpt3_generation import DExpertsGPT3Generation
 from pplm_generation import PPLMGeneration
+from contrastive_generation import ContrastiveGeneration
 
 from constants import OPENAI_API_KEY
 from utils_fn import  batchify, load_cache
 logging.disable(logging.CRITICAL)  # Disable logging from transformers
+
+
+def contrastive_gpt2(local_rank,
+         prompts: pd.Series,
+         max_len: int,
+         num_samples: int,
+         batch_size: int,
+         model_name_or_path: str,
+         out_file: Path,
+         **generate_kwargs) -> Iterable[str]:
+    # Setup model
+    print('before model')
+    generator = ContrastiveGeneration(model_name_or_path, local_rank=local_rank)
+    print('after model')
+
+    # Repeat prompts
+    prompts = prompts.repeat(num_samples)
+    if local_rank >= 0:
+        dist.barrier()
+    # Resume generation
+    num_cached_generations = 0
+    for generation in load_cache(out_file):
+        yield generation
+        num_cached_generations += 1
+    if local_rank >= 0:
+        dist.barrier()
+    # Generate with prompts
+    prompts = prompts[num_cached_generations:]
+    print(num_cached_generations)
+    for prompt in tqdm(batchify(prompts, batch_size),
+                       total=math.ceil(len(prompts) / batch_size),
+                       desc=f'Generation',
+                       dynamic_ncols=True,
+                       postfix={'batch_size': batch_size}):
+        attr = ['[CLS]This is a nontoxic comment.[SEP]']*len(prompt)
+
+        # Generate
+        batch = generator.generate(prompt, attr, max_len, **generate_kwargs)
+
+        for generation in batch:
+            with out_file.open('a') as f:
+                print(json.dumps(generation), file=f)
+                f.flush()
+            yield generation
 
 
 def pplm(local_rank,

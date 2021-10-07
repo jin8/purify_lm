@@ -499,10 +499,11 @@ class PPLMGeneration(Pipeline):
             pert_gen_tok_texts.append(pert_gen_tok_text)
 
         decode_start_idx = 0 if include_context_in_generation else len(tokenized_cond_text)
-        pert_gen_tok_texts = [x[0, decode_start_idx:].tolist() for x in pert_gen_tok_texts]
+        pert_gen_tok_texts = pert_gen_tok_texts[0][:, decode_start_idx:] #B w : tensor
         pert_gen_texts = [
-            self.tokenizer.decode(pert_gen_tok_text, clean_up_tokenization_spaces=clean_up_tokenization_spaces)
+            self.tokenizer.decode(pert_gen_tok_text.tolist(), clean_up_tokenization_spaces=clean_up_tokenization_spaces)
             for pert_gen_tok_text in pert_gen_tok_texts
         ]
+
 
         return pert_gen_texts

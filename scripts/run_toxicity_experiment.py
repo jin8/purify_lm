@@ -15,43 +15,15 @@ import torch
 from tqdm import tqdm
 import os
 import json
-from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3
+from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3,contrastive_gpt2
 from constants import PERSPECTIVE_API_ATTRIBUTES_LOWER, OPENAI_API_KEY
 from perspective_api import PerspectiveWorker, unpack_scores
-from utils_fn import load_jsonl, batchify, ensure_dir, set_seed
+from utils_fn import load_jsonl, batchify, ensure_dir, set_seed, collate, make_generations_col
 import torch.distributed as dist
 from detoxify import Detoxify
 
-ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'dexperts-gpt3', 'pplm']
+ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'dexperts-gpt3', 'pplm', 'contrastive-gpt2']
 
-
-def make_generations_col(generations, responses):
-    for generation, response in zip(generations, responses):
-        try:
-            if response['response']:
-                response = unpack_scores(response['response'])[0]
-            else:
-                response = {x: None for x in PERSPECTIVE_API_ATTRIBUTES_LOWER}
-        except KeyError:
-            pass
-
-        yield {'text': generation, **response}
-
-
-def collate(dataset: Optional[pd.DataFrame], generations: List[str], responses: Iterable[Dict[str, Any]], output_file: str):
-
-    generations_col_iter = make_generations_col(generations, responses)
-    if dataset is None:
-        generations_col = list(tqdm(generations_col_iter, total=len(generations), desc='Collating files'))
-        dataset = pd.DataFrame(generations_col)
-    else:
-        assert len(generations) % len(dataset) == 0
-        n = len(generations) // len(dataset)
-        print(f"Detected samples per prompt:", n)
-        generations_col = list(tqdm(batchify(generations_col_iter, n), total=len(dataset), desc='Collating files'))
-        dataset['generations'] = generations_col
-
-    dataset.to_json(output_file, orient='records', lines=True)
 
 
 @click.command()
@@ -121,10 +93,10 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
     output_dir = Path(output_dir)
     if local_rank >= 0:
         generations_file = output_dir / 'generations_gpu{}.jsonl'.format(local_rank)
-        perspective_file = output_dir / 'perspective_gpu{}.jsonl'.format(local_rank)
+        bert_eval_file = output_dir / 'bert_eval_gpu{}.jsonl'.format(local_rank)
     else:
         generations_file = output_dir / 'generations.jsonl'
-        perspective_file = output_dir / 'perspective.jsonl'
+        bert_eval_file = output_dir / 'bert_eval.jsonl'
 
     if local_rank>=0:
         dist.barrier()
@@ -147,17 +119,8 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if perspective_api:
-        # Create perspective worker thread
-        perspective = PerspectiveWorker(
-            out_file=perspective_file,
-            total=len(prompts) * num_sentences,
-            rate_limit=perspective_rate_limit
-        )
-    else:
-        classifier = Detoxify('original', device=device)
-        classifier.model.eval()
-
+    classifier = Detoxify('original', device=device)
+    classifier.model.eval()
 
     # Setup model for generation
     # TODO: move this logic into generation.py
@@ -226,10 +189,23 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
             model_name_or_path=model,
             out_file=generations_file
         )
+    elif model_type == 'contrastive-gpt2':
+        generations_iter = contrastive_gpt2(
+            local_rank=local_rank,
+            prompts=prompts,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file
+        )
     else:
         raise NotImplementedError(f'Model {model} not implemented')
 
+
     # Generate and collate perspective scores
+    """
     if perspective_api:
         generations = []
         for i, gen in enumerate(generations_iter):
@@ -240,22 +216,22 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
         print('Finished generation and perspective scoring!')
 
     else:
-        generations = []
+    """
+    generations = []
 
-        for i, gen in enumerate(generations_iter):
-            generations.append(gen)
-            row = {}
-            result = classifier.predict(gen)
-            row = {k: float(v) for k, v in result.items()}
-            num_cached_generations = 0
+    for i, gen in enumerate(generations_iter):
+        generations.append(gen)
+        row = {}
+        result = classifier.predict(gen)
+        row = {k: float(v) for k, v in result.items()}
 
-            with perspective_file.open('a') as fw:
-                print(json.dumps(row), file=fw)
-                fw.flush()
+        with bert_eval_file.open('a') as fw:
+            print(json.dumps(row), file=fw)
+            fw.flush()
 
-    if os.path.exists(perspective_file):
+    if os.path.exists(bert_eval_file):
         print('Collating output files')
-        collate(dataset, generations, load_jsonl(perspective_file), output_file)
+        collate(dataset, generations, load_jsonl(bert_eval_file), output_file)
 
 
 if __name__ == '__main__':

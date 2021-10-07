@@ -1,30 +1,51 @@
+import sys, os
+sys.path.append(os.path.abspath('generation'))
+sys.path.append(os.path.abspath('utils'))
+sys.path.append(os.path.abspath('modeling'))
 from pathlib import Path
 from typing import Union, List
 
 import torch
 import torch.nn.functional as F
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2PreTrainedModel
+from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2PreTrainedModel, BertTokenizer
 from transformers.generation_utils import top_k_top_p_filtering
-
 from utils_fn import set_seed
+from contrastive_lm import ContrastiveGPT2
+from base_config import Config
+
+from cont_bert_gpt2 import ContBERTGPT2Generation
 
 MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
 
 
-class ContGeneration:
+class ContrastiveGeneration:
     STOP_TOKEN = "<|endoftext|>"
 
     def __init__(self, model: Union[str, Path, GPT2PreTrainedModel] = 'gpt2',
-                tokenizer: str = 'gpt2', seed: int = 42, supervised=False):
+                tokenizer: str = 'gpt2', seed: int = 42, supervised=False, old_version=True, local_rank=-1):
         # Set up device
+        # Set up device
+        if local_rank == -1:
+            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device("cuda:{}".format(local_rank) if torch.cuda.is_available() else "cpu")
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         n_gpu = torch.cuda.device_count()
         set_seed(seed, n_gpu)
 
         # Set up model
         if isinstance(model, Path) or isinstance(model, str):
-            model = GPT2LMHeadModel.from_pretrained(str(model))
+            if old_version:
+                self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer, pad_token=self.STOP_TOKEN)
+                self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+                config = Config()
+                model_path = model
+
+                model = ContBERTGPT2Generation(config, self.tokenizer, self.bert_tokenizer, supervised=False)
+                model.load_state_dict(
+                    torch.load(str(model_path), map_location=torch.device(local_rank)))
+            else:
+                model = ContrastiveGPT2.from_pretrained(str(model))
         self.model = model.to(self.device)
 
         # Set up tokenizer
@@ -33,6 +54,8 @@ class ContGeneration:
         # way that works at the moment of setting the pad_token_id to the <EOS> token that is already
         # included in the vocab size.
         self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer, pad_token=self.STOP_TOKEN)
+        self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
         assert self.tokenizer.eos_token_id == self.tokenizer.pad_token_id
         self.supervised = supervised
 
@@ -44,6 +67,7 @@ class ContGeneration:
 
     def generate(self,
                  prompt: Union[str, List[str]],
+                 attr: Union[str, List[str]],
                  max_len: int = 20,
                  sample: bool = True,
                  k: int = 0,
@@ -54,6 +78,8 @@ class ContGeneration:
             prompt = [prompt]
 
         encodings_dict = self.tokenizer.batch_encode_plus(prompt, padding=True, return_tensors='pt')
+        attr_encoding_dict = self.bert_tokenizer.batch_encode_plus(attr, padding=True, return_tensors='pt')
+        attr_ids = attr_encoding_dict['input_ids'].to(self.device)
 
         input_ids = encodings_dict['input_ids'].to(self.device)
         attention_mask = encodings_dict['attention_mask'].to(self.device)
@@ -65,8 +91,9 @@ class ContGeneration:
         self.model.eval()
         with torch.no_grad():
             for step in range(max_len):
-                outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids, use_cache=True,
-                                          **model_kwargs)
+                outputs = self.model(input_ids,
+                    attention_mask=attention_mask, position_ids=position_ids,
+                    attr_ids=attr_ids, use_cache=True, **model_kwargs)
                 logits, past = outputs[0], outputs[1]
 
                 # in the first decoding step, we want to use the 'real' last position for each sentence
