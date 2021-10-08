@@ -95,14 +95,14 @@ class PerspectiveAPI:
                 request_ids = None
                 if isinstance(batch[0], tuple):
                     request_ids, batch = zip(*batch)
-
+                print(batch)
                 for j, (response, exception) in enumerate(self.request(batch)):
                     response_dict = {
                         'request_id': request_ids[j] if request_ids else i,
                         'response': response,
                         'error': str(exception) if exception else None
                     }
-
+                    print(response_dict)
                     # Save response
                     json.dump(response_dict, f)
                     f.write('\n')
