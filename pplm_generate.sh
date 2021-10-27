@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 OUTPUT_DIR=our_generations/toxicity-bert/pplm-small
 PROMPTS_DATASET=../data/realtoxicityprompts/prompts.jsonl
 MODEL_DIR=models/experts/toxicity/large
@@ -29,6 +30,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch \
     #--toxic-model $MODEL_DIR/finetuned_gpt2_toxic \
     #--toxic-model $MODEL_DIR/finetuned_gpt2_toxic \
 =======
+=======
+>>>>>>> Stashed changes
 OUTPUT_DIR=our_generations/toxicity-bert/pplm-small
 PROMPTS_DATASET=../data/realtoxicityprompts/prompts.jsonl
 MODEL_DIR=models/experts/toxicity/large
@@ -58,4 +61,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch \
 
     #--toxic-model $MODEL_DIR/finetuned_gpt2_toxic \
     #--toxic-model $MODEL_DIR/finetuned_gpt2_toxic \
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes

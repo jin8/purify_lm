@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 import sys, os
 sys.path.append(os.path.abspath('generation'))
 sys.path.append(os.path.abspath('utils'))
@@ -238,6 +239,8 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
 if __name__ == '__main__':
     main()
 =======
+=======
+>>>>>>> Stashed changes
 import sys, os
 sys.path.append(os.path.abspath('generation'))
 sys.path.append(os.path.abspath('utils'))
@@ -255,7 +258,11 @@ import torch
 from tqdm import tqdm
 import os
 import json
+<<<<<<< Updated upstream
 from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3, cont
+=======
+from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3, cont, mapping, att, attadd
+>>>>>>> Stashed changes
 from constants import PERSPECTIVE_API_ATTRIBUTES_LOWER, OPENAI_API_KEY
 from perspective_api import PerspectiveWorker, unpack_scores
 from utils_fn import load_jsonl, batchify, ensure_dir, set_seed
@@ -266,7 +273,11 @@ from transformers import (
     MODEL_WITH_LM_HEAD_MAPPING,
     AutoConfig
 )
+<<<<<<< Updated upstream
 ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'dexperts-gpt3', 'pplm', 'cont_gpt', 'cont_gpt_bert', 'cont_gpt_last']
+=======
+ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'dexperts-gpt3', 'pplm', 'mapping','att','attadd','cont_gpt', 'add_cont_bert_gpt','cont_bert_gpt', 'cont_bert_gpt_only','add_cont_gpt_last','cont_gpt_last', 'cont_gpt_last_only']
+>>>>>>> Stashed changes
 
 
 def make_generations_col(generations, responses):
@@ -357,7 +368,11 @@ def main(config_name:Optional[str], local_rank:int, num_examples:int, random_sta
         assert not dataset_file
         dataset = None
         # Create EOS prompts
+<<<<<<< Updated upstream
         if model_type in ['gpt2', 'gpt2-affect', 'gpt2-ensemble', 'gpt2-naughty-list', 'pplm', 'cont_bert_gpt', 'cont_gpt', 'cont_gpt_last']:
+=======
+        if model_type in ['gpt2', 'gpt2-affect', 'gpt2-ensemble', 'gpt2-naughty-list', 'pplm','mapping','att','attadd', 'add_cont_bert_gpt','cont_bert_gpt','cont_bert_gpt_only', 'cont_gpt', 'add_cont_gpt_last','cont_gpt_last', 'cont_gpt_last_only']:
+>>>>>>> Stashed changes
             prompts = pd.Series('<|endoftext|>')
         elif model_type == 'ctrl':
             # HACK: update gen_samples since we use it as our batch size for pipelines
@@ -480,6 +495,49 @@ def main(config_name:Optional[str], local_rank:int, num_examples:int, random_sta
             model_name_or_path=model,
             out_file=generations_file
         )
+<<<<<<< Updated upstream
+=======
+    elif 'mapping' in model_type:
+        generations_iter = mapping(
+            config=config,
+            approach=model_type,
+            local_rank=local_rank,
+            prompts=prompts,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file
+        )
+    elif 'att' in model_type:
+        generations_iter = att(
+            config=config,
+            approach=model_type,
+            local_rank=local_rank,
+            prompts=prompts,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file
+        )
+    elif 'attadd' in model_type:
+        generations_iter = attadd(
+            config=config,
+            approach=model_type,
+            local_rank=local_rank,
+            prompts=prompts,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file
+        )
+
+>>>>>>> Stashed changes
     elif 'cont' in model_type:
         generations_iter = cont(
             config=config,
@@ -527,4 +585,7 @@ def main(config_name:Optional[str], local_rank:int, num_examples:int, random_sta
 
 if __name__ == '__main__':
     main()
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes

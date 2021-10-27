@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # TODO: add `text` key to cached generations
 # TODO: consolidate code for loading cache
 import json
@@ -354,6 +355,8 @@ def gpt3(prompts: pd.Series,
         response = request(batch)
         yield from [choice['text'] for choice in response['choices']]
 =======
+=======
+>>>>>>> Stashed changes
 # TODO: add `text` key to cached generations
 # TODO: consolidate code for loading cache
 import json
@@ -377,7 +380,13 @@ from dexperts_generation import DExpertsGeneration
 from dexperts_gpt3_generation import DExpertsGPT3Generation
 from pplm_generation import PPLMGeneration
 from cont_generation import ContGeneration
+<<<<<<< Updated upstream
 
+=======
+from mapping_generation import MappingGeneration
+from att_generation import AttGeneration
+from att_add_generation import AttAddGeneration
+>>>>>>> Stashed changes
 from constants import OPENAI_API_KEY
 from utils_fn import  batchify, load_cache
 logging.disable(logging.CRITICAL)  # Disable logging from transformers
@@ -393,6 +402,10 @@ def pplm(local_rank,
          class_label: int,
          num_iterations: int,
          model_name_or_path: str,
+<<<<<<< Updated upstream
+=======
+         past_key_values: bool,
+>>>>>>> Stashed changes
          out_file: Path):
     # Set up PPLM with multiprocessing
     if local_rank >= 0:
@@ -505,6 +518,10 @@ def ctrl(local_rank,
          ctrl_code: str,
          model_name_or_path: str,
          out_file: Path,
+<<<<<<< Updated upstream
+=======
+         past_key_values: bool,
+>>>>>>> Stashed changes
          **generate_kwargs) -> Iterable[str]:
     # Prepend CTRL code to prompts
     prompts = ctrl_code + " " + prompts
@@ -574,6 +591,70 @@ def cont(config, approach, local_rank,
                             out_file=out_file,
                             **generate_kwargs)
 
+<<<<<<< Updated upstream
+=======
+def mapping(config, approach, local_rank,
+         prompts: pd.Series,
+         max_len: int,
+         num_samples: int,
+         batch_size: int,
+         model_name_or_path: str,
+         out_file: Path,
+         past_key_values: bool,
+         **generate_kwargs) -> Iterable[str]:
+    # Setup model
+    generator = MappingGeneration(config, approach, model_name_or_path, past_key_values, local_rank=local_rank)
+
+    yield from _gpt2_helper(local_rank=local_rank,
+                            prompts=prompts,
+                            max_len=max_len,
+                            num_samples=num_samples,
+                            batch_size=batch_size,
+                            generator=generator,
+                            out_file=out_file,
+                            past_key_values: bool,
+                            **generate_kwargs)
+def att(config, approach, local_rank,
+         prompts: pd.Series,
+         max_len: int,
+         num_samples: int,
+         batch_size: int,
+         model_name_or_path: str,
+         out_file: Path,
+         **generate_kwargs) -> Iterable[str]:
+    # Setup model
+    generator = AttGeneration(config, approach, model_name_or_path, local_rank=local_rank)
+
+    yield from _gpt2_helper(local_rank=local_rank,
+                            prompts=prompts,
+                            max_len=max_len,
+                            num_samples=num_samples,
+                            batch_size=batch_size,
+                            generator=generator,
+                            out_file=out_file,
+                            **generate_kwargs)
+
+def attadd(config, approach, local_rank,
+         prompts: pd.Series,
+         max_len: int,
+         num_samples: int,
+         batch_size: int,
+         model_name_or_path: str,
+         out_file: Path,
+         **generate_kwargs) -> Iterable[str]:
+    # Setup model
+    generator = AttAddGeneration(config, approach, model_name_or_path, local_rank=local_rank)
+
+    yield from _gpt2_helper(local_rank=local_rank,
+                            prompts=prompts,
+                            max_len=max_len,
+                            num_samples=num_samples,
+                            batch_size=batch_size,
+                            generator=generator,
+                            out_file=out_file,
+                            **generate_kwargs)
+
+>>>>>>> Stashed changes
 def gpt2(local_rank,
          prompts: pd.Series,
          max_len: int,
@@ -683,4 +764,7 @@ def gpt3(prompts: pd.Series,
     for batch in tqdm(batchify(prompts, batch_size)):
         response = request(batch)
         yield from [choice['text'] for choice in response['choices']]
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes

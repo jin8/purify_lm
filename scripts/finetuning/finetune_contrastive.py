@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -289,6 +290,8 @@ def _mp_fn(index):
 
 if __name__ == "__main__":
 =======
+=======
+>>>>>>> Stashed changes
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -377,9 +380,24 @@ class ModelArguments:
 
     ablation: Optional[str] = field(
         default='cont_gpt',
+<<<<<<< Updated upstream
         metadata={"help": "cont_bert_gpt/cont_gpt"},
     )
 
+=======
+        metadata={"help": "cont_bert_gpt_only/cont_bert_gpt/cont_gpt"},
+    )
+
+    alpha: Optional[float] = field(
+        default=1.0,
+        metadata={"help": "weight ratio between contrastive loss and reconstruction loss"},
+    )
+
+    kl_loss: bool = field(
+        default=False,
+        metadata={"help": "Whether to use KL loss"},
+    )
+>>>>>>> Stashed changes
 
 @dataclass
 class DataTrainingArguments:
@@ -419,7 +437,11 @@ class DataTrainingArguments:
 def get_dataset(args: DataTrainingArguments, tokenizer: PreTrainedTokenizer, evaluate=False):
     file_paths = args.eval_data_file if evaluate else args.train_data_files
     print(file_paths)
+<<<<<<< Updated upstream
     if args.ablation == 'cont_bert_gpt':
+=======
+    if 'cont_bert_gpt' in args.ablation:
+>>>>>>> Stashed changes
         text_label = True
     else:
         text_label = False
@@ -500,6 +522,11 @@ def main():
         config.supervised = model_args.sup_contrastive_loss
         config.add_cross_attention = True
         config.ablation = model_args.ablation
+<<<<<<< Updated upstream
+=======
+        config.alpha = model_args.alpha
+        config.kl_loss = model_args.kl_loss
+>>>>>>> Stashed changes
         model = ContrastiveGPT2.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -508,6 +535,11 @@ def main():
         )
     else:
         config.ablation = model_args.ablation
+<<<<<<< Updated upstream
+=======
+        config.alpha = model_args.alpha
+        config.kl_loss = model_args.kl_loss
+>>>>>>> Stashed changes
         logger.info("Training new model from scratch")
         config.supervised = model_args.sup_contrastive_loss
         config.add_cross_attention = True
@@ -531,7 +563,11 @@ def main():
 
     train_dataset = get_dataset(data_args, tokenizer=tokenizer) if training_args.do_train else None
     eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
+<<<<<<< Updated upstream
     if model_args.ablation == 'cont_bert_gpt':
+=======
+    if 'cont_bert_gpt' in model_args.ablation:
+>>>>>>> Stashed changes
         text_label = True
     else:
         text_label=False
@@ -592,5 +628,9 @@ def _mp_fn(index):
 
 
 if __name__ == "__main__":
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
     main()
+=======
+    main()
+>>>>>>> Stashed changes

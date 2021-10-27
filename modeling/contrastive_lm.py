@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 from pathlib import Path
 from typing import Union, List
 import torch
@@ -257,6 +258,8 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             #print(attr_ids)
         return outputs  # (loss), lm_logits, presents, (all hidden_states), (attentions)
 =======
+=======
+>>>>>>> Stashed changes
 from pathlib import Path
 from typing import Union, List
 import torch
@@ -351,12 +354,26 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         self.sim = Similarity(temp=0.07)
         self.attr_embedding = nn.Embedding(2, config.hidden_size)
 
+<<<<<<< Updated upstream
+=======
+        self.discrim = nn.Linear(config.hidden_size, 2)
+
+>>>>>>> Stashed changes
         self.bert_config = BertConfig.from_pretrained('bert-base-uncased')
         self.bert = BertModel(self.bert_config, add_pooling_layer=False)
         self.bert_pooler = Pooler('cls')
         self.bert_mlp = MLPLayer(self.bert_config)
         self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         self.freeze_bert(10)
+<<<<<<< Updated upstream
+=======
+        self.alpha = config.alpha
+        self.kl_loss = config.kl_loss
+        if self.kl_loss:
+            self.guide_GPT = GPT2LMHeadModel.from_pretrained('gpt2-large')
+            for param in self.guide_GPT.parameters():
+                param.requires_grad = False
+>>>>>>> Stashed changes
 
         self.supervised = config.supervised
 
@@ -452,6 +469,10 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         cos_sim = self.sim(z1.unsqueeze(1), z2.unsqueeze(0))
         cos_labels = torch.arange(cos_sim.size(0)).long().to(cos_sim.device)
         cos_loss = loss_fct(cos_sim, cos_labels)
+<<<<<<< Updated upstream
+=======
+        #cos_loss = loss_fct(cos_sim, cos_labels.unsqueeze(1))
+>>>>>>> Stashed changes
         return cos_loss
 
 
@@ -468,11 +489,16 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         if not (gen_approach is None):
             self.ablation = gen_approach
         batch_size = len(attr_labels)
+<<<<<<< Updated upstream
         if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last':
+=======
+        if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last' or self.ablation == 'cont_gpt_last_only' or self.ablation=='add_cont_gpt_last':
+>>>>>>> Stashed changes
             #print(attention_mask.size())
 
             if len(attr_labels.size()) == 1:
                 attr_labels = attr_labels.unsqueeze(-1)
+<<<<<<< Updated upstream
 
         if labels is not None:
             if self.ablation == 'cont_bert_gpt':
@@ -499,6 +525,35 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             attr_embed = self.attr_embedding(attr_labels)
 
         if self.ablation == 'cont_bert_gpt':
+=======
+        if labels is not None:
+            if not ('only' in self.ablation):
+                if self.ablation == 'cont_bert_gpt' or self.ablation == 'cont_bert_gpt_linear' or self.ablation == 'add_cont_bert_gpt':
+                    attr_ids = torch.stack([attr_ids, attr_ids], dim=1)
+                    attr_ids = attr_ids.view((-1, attr_ids.size(-1)))
+
+                input_ids = torch.stack([input_ids, input_ids],dim=1)
+                input_ids = input_ids.view((-1, input_ids.size(-1))) # (bs * num_sent, len)
+
+                attention_mask = torch.stack([attention_mask, attention_mask],dim=1)
+                attention_mask = attention_mask.view((-1, attention_mask.size(-1))) # (bs * num_sent len)
+
+                labels = torch.stack([labels, labels],dim=1)
+                labels = labels.view((-1, labels.size(-1))) # (bs * num_sent len)
+
+                if 'cont_bert_gpt' in self.ablation and len(attr_labels.size()) == 1:
+                    attr_labels = attr_labels.unsqueeze(-1)
+
+                if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last' or self.ablation == 'cont_bert_gpt_linear':
+                    attr_labels = torch.stack([attr_labels, attr_labels],dim=1)
+                    attr_labels = attr_labels.view((-1, attr_labels.size(-1))) # (bs * num_sent len)
+            else:
+                labels = labels.view((-1, labels.size(-1)))
+        if self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last' or self.ablation=='cont_gpt_last_only':
+            attr_embed = self.attr_embedding(attr_labels)
+
+        if self.ablation == 'cont_bert_gpt' or self.ablation == 'cont_bert_gpt_only' or self.ablation == 'cont_bert_gpt_linear' or self.ablation == 'add_cont_bert_gpt':
+>>>>>>> Stashed changes
             attr_attention_mask = (attr_ids != self.bert_tokenizer.pad_token_id).long()
 
             attr_outputs = self.bert(
@@ -518,7 +573,24 @@ class ContrastiveGPT2(GPT2LMHeadModel):
                 past_key_values=past_key_values,
                 use_cache=use_cache
              )
+<<<<<<< Updated upstream
         if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last':
+=======
+        if self.kl_loss and labels is not None:
+            guide_outputs = self.guide_GPT.transformer(
+                input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache
+            )
+            
+            guide_hidden_states = guide_outputs[0]
+            guide_outputs[0].detach()
+            guide_lm_logits = self.guide_GPT.lm_head(guide_hidden_states)
+            guide_hidden_states.detach()
+        if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last' or self.ablation=='cont_gpt_last_only':
+>>>>>>> Stashed changes
             #attribute vector encoding
             transformer_outputs = self.transformer(
                 input_ids,
@@ -526,10 +598,16 @@ class ContrastiveGPT2(GPT2LMHeadModel):
                 position_ids=position_ids,
                 past_key_values=past_key_values,
                 use_cache=use_cache,
+<<<<<<< Updated upstream
                 encoder_attention_mask=torch.ones_like(attr_labels)
             )
 
         if self.ablation == 'cont_gpt_last':
+=======
+            )
+
+        if self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last' or self.ablation == 'cont_gpt_last_only':
+>>>>>>> Stashed changes
             hidden_states = transformer_outputs[0] + attr_embed
         else:
             hidden_states = transformer_outputs[0]
@@ -537,22 +615,44 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         mlp_output = F.normalize(self.mlp(pooler_output), dim=-1)
         mlp_output = mlp_output.view((batch_size, -1, mlp_output.size(-1))) # (bs, num_sent, hidden)
 
+<<<<<<< Updated upstream
         if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last':
             lm_logits = self.lm_head(hidden_states)
         if self.ablation == 'cont_bert_gpt':
+=======
+        if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last' or self.ablation=='cont_gpt_last_only':
+            lm_logits = self.lm_head(hidden_states)
+        if self.ablation == 'cont_bert_gpt' or self.ablation =='add_cont_bert_gpt' or self.ablation == 'cont_bert_gpt_only' or self.ablation == 'cont_bert_gpt_linear':
+>>>>>>> Stashed changes
             lm_logits = self.lm_head(hidden_states + attr_pooler_output.unsqueeze(1))
         outputs = (lm_logits,) + transformer_outputs[1:]
 
         if labels is not None:
+<<<<<<< Updated upstream
             if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last':
                 z1 = mlp_output[:, 0]
                 z2 = mlp_output[:, 1]
             if self.ablation == 'cont_bert_gpt':
+=======
+            if self.ablation == 'cont_gpt' or self.ablation == 'cont_gpt_last' or self.ablation=='add_cont_gpt_last':
+                z1 = mlp_output[:, 0]
+                z2 = mlp_output[:, 1]
+            if self.ablation == 'cont_bert_gpt' or self.ablation=='add_cont_bert_gpt' or self.ablation == 'cont_bert_gpt_linear':
+>>>>>>> Stashed changes
                 z11, z21 = bert_mlp_output[:, 0], bert_mlp_output[:, 1]
                 z12, z22 = mlp_output[:, 0], mlp_output[:, 1]
                 z1 = z11 + z12
                 z2 = z21 + z22
+<<<<<<< Updated upstream
 
+=======
+            if self.ablation == 'cont_bert_gpt_only':
+                z1 = bert_mlp_output
+                z2 = mlp_output
+            if self.ablation == 'cont_gpt_last_only':
+                z1 = mlp_output
+                z2 = attr_embed
+>>>>>>> Stashed changes
 
             if self.supervised:
                 if dist.is_initialized() and self.training:
@@ -562,6 +662,22 @@ class ContrastiveGPT2(GPT2LMHeadModel):
                 if dist.is_initialized() and self.training:
                     z1, z2 = self.gather(z1, z2)
                 cos_loss = self.self_contrastive_loss(z1, z2)
+<<<<<<< Updated upstream
+=======
+            if self.ablation == 'add_cont_bert_gpt':
+                z1 = torch.cat([mlp_output[:,0], mlp_output[:,1]], dim=0)
+                z2 = torch.cat([bert_mlp_output[:,0], bert_mlp_output[:,1]], dim=0)
+                if dist.is_initialized() and self.training:
+                    z1, z2, attr_labels = self.gather(z1, z2, attr_labels)
+                add_cos_loss = self.self_contrastive_loss(z1, z2)
+            if self.ablation == 'add_cont_gpt_last':
+                z1 = torch.cat([mlp_output[:,0], mlp_output[:,1]], dim=0)
+                z2 = attr_embed.squeeze(1)
+                if dist.is_initialized() and self.training:
+                    z1, z2, attr_labels = self.gather(z1, z2, attr_labels)
+                add_cos_loss = self.self_contrastive_loss(z1, z2)
+            
+>>>>>>> Stashed changes
             loss_fct = nn.CrossEntropyLoss()
 
             # Shift so that tokens < n predict n
@@ -569,11 +685,26 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
             rec_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+<<<<<<< Updated upstream
             loss =  cos_loss + rec_loss
+=======
+            loss = self.alpha * cos_loss + rec_loss
+            if 'add' in self.ablation:
+                loss += add_cos_loss
+            if self.ablation == 'cont_bert_gpt_linear':
+                linear_output = self.discrim((hidden_states + attr_pooler_output.unsqueeze(1)).sum(1))
+                loss += loss_fct(torch.sigmoid(linear_output), attr_labels.squeeze())
+            if self.kl_loss:
+                kl_div = nn.KLDivLoss()
+                loss += kl_div(lm_logits, guide_lm_logits.detach()).mean()
+>>>>>>> Stashed changes
             outputs = (loss,) + outputs
 
             #print("cos:",cos_loss)
             #print(input_ids)
             #print(attr_ids)
         return outputs  # (loss), lm_logits, presents, (all hidden_states), (attentions)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes

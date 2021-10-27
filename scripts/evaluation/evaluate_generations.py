@@ -83,10 +83,14 @@ def main(generations_dir):
     dist1, dist2, dist3 = distinctness(generations_df)
 
     # write output results
+<<<<<<< Updated upstream
     if os.path.exists(generations_dir + 'eval_results.txt'):
        fo = open(generations_dir + 'eval_results.txt', 'a')
     else:
         fo = open(generations_dir + 'eval_results.txt', 'w')
+=======
+    fo = open(generations_dir + 'eval_results.txt', 'w')
+>>>>>>> Stashed changes
     for i, dist_n in enumerate([dist1, dist2, dist3]):
         fo.write(f'dist-{i+1} = {dist_n}\n')
         fo.flush()

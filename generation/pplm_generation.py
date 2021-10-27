@@ -1,4 +1,5 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 #! /usr/bin/env python3
 # coding=utf-8
 
@@ -509,6 +510,8 @@ class PPLMGeneration(Pipeline):
 
         return pert_gen_texts
 =======
+=======
+>>>>>>> Stashed changes
 #! /usr/bin/env python3
 # coding=utf-8
 
@@ -1017,4 +1020,7 @@ class PPLMGeneration(Pipeline):
         ]
 
         return pert_gen_texts
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
