@@ -93,12 +93,6 @@ class DataCollatorForLanguageModelingWithAttribute(DataCollatorMixin):
         attention_mask = torch.arange(max_len)[None, :] < lens[:, None]
         batch["attention_mask"] = attention_mask.long()
         batch["attr_labels"] = torch.stack(attr_labels, dim=0)
-<<<<<<< Updated upstream
-        if self.text_att_flag:
-            from torch.nn.utils.rnn import pad_sequence
-            batch["attr_ids"] = pad_sequence(text_att, padding_value=0, batch_first=True)
-=======
->>>>>>> Stashed changes
 
         return batch
 
