@@ -62,21 +62,10 @@ class DataCollatorForLanguageModelingWithAttribute(DataCollatorMixin):
     pad_to_multiple_of: Optional[int] = None
     tf_experimental_compile: bool = False
     return_tensors: str = "pt"
-<<<<<<< Updated upstream
-    text_att_flag: bool = False
-
-    def torch_call(self, raw_batch: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
-        # Handle dict or lists with proper padding and conversion to tensor.
-        if self.text_att_flag:
-            examples, lens, attr_labels, text_att = map(list, zip(*raw_batch))
-        else:
-            examples, lens, attr_labels = map(list, zip(*raw_batch))
-=======
 
     def torch_call(self, raw_batch: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
         examples, lens, attr_labels = map(list, zip(*raw_batch))
->>>>>>> Stashed changes
 
 
         if isinstance(examples[0], (dict, BatchEncoding)):
