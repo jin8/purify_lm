@@ -25,6 +25,7 @@ class ContrastiveGeneration:
                 tokenizer: str = 'gpt2', seed: int = 42, supervised=False, old_version=True, local_rank=-1):
         # Set up device
         # Set up device
+        print(local_rank)
         if local_rank == -1:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         else:
@@ -67,7 +68,7 @@ class ContrastiveGeneration:
 
     def generate(self,
                  prompt: Union[str, List[str]],
-                 attr: Union[str, List[str]],
+                 attr,
                  max_len: int = 20,
                  sample: bool = True,
                  k: int = 0,
@@ -76,11 +77,11 @@ class ContrastiveGeneration:
                  **model_kwargs) -> List[str]:
         if isinstance(prompt, str):
             prompt = [prompt]
-
         encodings_dict = self.tokenizer.batch_encode_plus(prompt, padding=True, return_tensors='pt')
-        attr_encoding_dict = self.bert_tokenizer.batch_encode_plus(attr, padding=True, return_tensors='pt')
-        attr_ids = attr_encoding_dict['input_ids'].to(self.device)
-
+        #attr_encoding_dict = self.bert_tokenizer.batch_encode_plus(attr, padding=True, return_tensors='pt')
+        #attr_ids = attr_encoding_dict['input_ids'].to(self.device)
+        attr_labels = attr.to(self.device)
+        attr_labels = attr_labels.view(-1,1)
         input_ids = encodings_dict['input_ids'].to(self.device)
         attention_mask = encodings_dict['attention_mask'].to(self.device)
         batch_size, input_seq_len = input_ids.shape
@@ -91,9 +92,13 @@ class ContrastiveGeneration:
         self.model.eval()
         with torch.no_grad():
             for step in range(max_len):
+
+                #outputs = self.model(input_ids,
+                #    attention_mask=attention_mask, position_ids=position_ids,
+                #    attr_ids=attr_ids, use_cache=True, **model_kwargs)
                 outputs = self.model(input_ids,
                     attention_mask=attention_mask, position_ids=position_ids,
-                    attr_ids=attr_ids, use_cache=True, **model_kwargs)
+                    attr_labels=attr_labels, use_cache=True, **model_kwargs)
                 logits, past = outputs[0], outputs[1]
 
                 # in the first decoding step, we want to use the 'real' last position for each sentence

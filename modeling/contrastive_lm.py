@@ -87,6 +87,7 @@ class ContrastiveGPT2(GPT2LMHeadModel):
 
         self.pooler = Pooler('avg')
         self.mlp = MLPLayer(config)
+        self.attr_mlp = MLPLayer(config)
 
         self.sim = Similarity(temp=0.07)
         self.attr_embedding = nn.Embedding(2, config.hidden_size)
@@ -121,20 +122,32 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         else:
             return z1, z2
 
-    def sup_contrastive_loss(self, z1, z2, labels, temperature=0.07, contrast_mode='all',
-                 base_temperature=0.07):
-
-        # z1 : BxD
-        # z2 : BxD
+    def contrastive_loss(self, z1, z2, labels=None, mask=None, temperature=0.07, contrast_mode='all'):
         features = torch.stack([z1,z2], dim=1)
-        batch_size = len(features)
-        labels = labels.contiguous().view(-1, 1)
-        if labels.shape[0] != batch_size:
-            raise ValueError('Num of labels does not match num of features')
-        mask = torch.eq(labels, labels.T).float().to(labels.device)
-        contrast_count = features.shape[1] # 2
-        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)  #2*B x D
-        if contrast_mode == 'one':  # n_views = 2
+        batch_size, n_views, _ = features.size()
+
+        if len(features.shape) < 3:
+            raise ValueError('`features` needs to be [bsz, n_views, ...],'
+                             'at least 3 dimensions are required')
+        if len(features.shape) > 3:
+            features = features.view(features.shape[0], features.shape[1], -1)
+
+        batch_size = features.shape[0]
+        if labels is not None and mask is not None:
+            raise ValueError('Cannot define both `labels` and `mask`')
+        elif labels is None and mask is None:
+            mask = torch.eye(batch_size, dtype=torch.float32).to(features.device)
+        elif labels is not None:
+            labels = labels.contiguous().view(-1, 1)
+            if labels.shape[0] != batch_size:
+                raise ValueError('Num of labels does not match num of features')
+            mask = torch.eq(labels, labels.T).float().to(features.device)
+        else:
+            mask = mask.float().to(features.device)
+
+        contrast_count = features.shape[1]
+        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
+        if contrast_mode == 'one':
             anchor_feature = features[:, 0]
             anchor_count = 1
         elif contrast_mode == 'all':
@@ -143,45 +156,43 @@ class ContrastiveGPT2(GPT2LMHeadModel):
         else:
             raise ValueError('Unknown mode: {}'.format(contrast_mode))
 
-        # compute logits BxD 2BxD -> Bx2B
+        # compute logits
+        # similarity compute : (BN, D) X (D, BN) -> (BN, BN)
         anchor_dot_contrast = torch.div(
             torch.matmul(anchor_feature, contrast_feature.T),
             temperature)
-        # for numerical stability
+        # for numerical stability: (BN, BN)
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
 
-        # tile mask BxB -> BxB
+        # tile mask
+        # all -> N, one -> 1
+        # mask : (B, B) -> (BN, BN)
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
+        # logits_mask : (BN, BN)
+        # assigning zeros to indicating itself
         logits_mask = torch.scatter(
             torch.ones_like(mask),
             1,
-            torch.arange(batch_size * anchor_count).view(-1, 1).to(anchor_feature.device),
+            torch.arange(batch_size * anchor_count).view(-1, 1).to(features.device),
             0
         )
+
+        # same class to 1 and different classes to 0
         mask = mask * logits_mask
-        import pdb
-        pdb.set_trace()
+
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positive
-        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+        mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-12)
 
         # loss
-        loss = - (temperature / base_temperature) * mean_log_prob_pos
+        loss = - mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
-
         return loss
-
-    def self_contrastive_loss(self, z1, z2):
-        loss_fct = nn.CrossEntropyLoss()
-        cos_sim = self.sim(z1.unsqueeze(1), z2.unsqueeze(0))
-        cos_labels = torch.arange(cos_sim.size(0)).long().to(cos_sim.device)
-        cos_loss = loss_fct(cos_sim, cos_labels)
-        return cos_loss
 
 
     def forward(self,
@@ -211,36 +222,42 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             attr_labels = attr_labels.view((-1, attr_labels.size(-1))) # (bs * num_sent len)
         attr_embed = self.attr_embedding(attr_labels)
 
+        attr_mlp_output = F.normalize(self.attr_mlp(attr_embed), dim=-1)
+        attr_mlp_output = attr_embed.view((batch_size, -1, attr_mlp_output.size(-1))) # (b
+        attr_embed = attr_embed.view((-1, attr_embed.size(-1))) # (b
         transformer_outputs = self.transformer(
             input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
             use_cache=use_cache,
-            encoder_hidden_states=attr_embed,
-            encoder_attention_mask=torch.ones_like(attr_labels)
+            #encoder_hidden_states=attr_embed,
+            #encoder_attention_mask=torch.ones_like(attr_labels)
         )
 
         hidden_states = transformer_outputs[0]
         pooler_output = self.pooler(attention_mask, transformer_outputs)
-        mlp_output = F.normalize(self.mlp(pooler_output), dim=-1)
-        mlp_output = mlp_output.view((batch_size, -1, mlp_output.size(-1))) # (bs, num_sent, hidden)
-
-        lm_logits = self.lm_head(hidden_states)
-        outputs = (lm_logits,) + transformer_outputs[1:]
+        transformer_mlp_output = F.normalize(self.mlp(pooler_output), dim=-1)
+        transformer_mlp_output = transformer_mlp_output.view((batch_size, -1, transformer_mlp_output.size(-1))) # (bs, num_sent, hidden)
 
         if labels is not None:
-            z1 = mlp_output[:, 0]
-            z2 = mlp_output[:, 1]
+
+            z11, z21 = attr_mlp_output[:,0], attr_mlp_output[:,1]
+            z12, z22 = transformer_mlp_output[:,0], transformer_mlp_output[:,1]
+            z1 = z11 + z12
+            z2 = z21 + z22
+        lm_logits = self.lm_head(hidden_states+attr_embed.unsqueeze(1))
+        outputs = (lm_logits,) + transformer_outputs[1:]
+        if labels is not None:
 
             if self.supervised:
                 if dist.is_initialized() and self.training:
                     z1, z2, attr_labels = self.gather(z1, z2, attr_labels)
-                cos_loss = self.sup_contrastive_loss(z1, z2, attr_labels)
+                cont_loss = self.contrastive_loss(z1, z2, attr_labels)
             else:
                 if dist.is_initialized() and self.training:
                     z1, z2 = self.gather(z1, z2)
-                cos_loss = self.self_contrastive_loss(z1, z2)
+                cont_loss = self.contrastive_loss(z1, z2)
             loss_fct = nn.CrossEntropyLoss()
 
             # Shift so that tokens < n predict n
@@ -248,7 +265,7 @@ class ContrastiveGPT2(GPT2LMHeadModel):
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
             rec_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss =  cos_loss + rec_loss
+            loss =  cont_loss + rec_loss
             outputs = (loss,) + outputs
 
             #print("cos:",cos_loss)

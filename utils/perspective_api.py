@@ -8,8 +8,8 @@ from typing import List, Union, Optional, Tuple, Dict, Any, Iterable
 from googleapiclient import discovery
 from googleapiclient.errors import HttpError
 from tqdm.auto import tqdm
-
-from constants import PERSPECTIVE_API_ATTRIBUTES, PERSPECTIVE_API_KEY
+import pandas as pd
+from constants import PERSPECTIVE_API_ATTRIBUTES, PERSPECTIVE_API_ATTRIBUTES_LOWER, PERSPECTIVE_API_KEY
 from utils_fn import batchify, load_cache
 
 
@@ -36,6 +36,32 @@ def unpack_scores(response_json: dict) -> Optional[Tuple[dict, dict]]:
 
     return summary_scores, span_scores
 
+def make_generations_col(generations, responses):
+    for generation, response in zip(generations, responses):
+        try:
+            if response['response']:
+                response = unpack_scores(response['response'])[0]
+            else:
+                response = {x: None for x in PERSPECTIVE_API_ATTRIBUTES_LOWER}
+        except KeyError:
+            pass
+
+        yield {'text': generation, **response}
+
+def collate(dataset: Optional[pd.DataFrame], generations: List[str], responses: Iterable[Dict[str, Any]], output_file: str):
+
+    generations_col_iter = make_generations_col(generations, responses)
+    if dataset is None:
+        generations_col = list(tqdm(generations_col_iter, total=len(generations), desc='Collating files'))
+        dataset = pd.DataFrame(generations_col)
+    else:
+        assert len(generations) % len(dataset) == 0
+        n = len(generations) // len(dataset)
+        print(f"Detected samples per prompt:", n)
+        generations_col = list(tqdm(batchify(generations_col_iter, n), total=len(dataset), desc='Collating files'))
+        dataset['generations'] = generations_col
+
+    dataset.to_json(output_file, orient='records', lines=True)
 
 class PerspectiveAPI:
     def __init__(self, api_key: str = PERSPECTIVE_API_KEY, rate_limit: int = 25):

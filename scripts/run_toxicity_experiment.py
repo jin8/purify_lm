@@ -17,8 +17,8 @@ import os
 import json
 from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3,contrastive_gpt2
 from constants import PERSPECTIVE_API_ATTRIBUTES_LOWER, OPENAI_API_KEY
-from perspective_api import PerspectiveWorker, unpack_scores
-from utils_fn import load_jsonl, batchify, ensure_dir, set_seed, collate, make_generations_col
+from perspective_api import PerspectiveWorker, unpack_scores, collate, make_generations_col
+from utils_fn import load_jsonl, batchify, ensure_dir, set_seed
 import torch.distributed as dist
 from detoxify import Detoxify
 
@@ -193,6 +193,7 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
         generations_iter = contrastive_gpt2(
             local_rank=local_rank,
             prompts=prompts,
+            attr=0,
             max_len=max_tokens,
             num_samples=num_sentences,
             p=p,
@@ -203,20 +204,6 @@ def main(local_rank:int, num_examples:int, random_state:int, output_dir: str, da
     else:
         raise NotImplementedError(f'Model {model} not implemented')
 
-
-    # Generate and collate perspective scores
-    """
-    if perspective_api:
-        generations = []
-        for i, gen in enumerate(generations_iter):
-            generations.append(gen)
-            perspective(f'generation-{i}', gen)
-        torch.cuda.empty_cache()
-        perspective.stop()
-        print('Finished generation and perspective scoring!')
-
-    else:
-    """
     generations = []
 
     for i, gen in enumerate(generations_iter):

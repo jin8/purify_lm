@@ -12,6 +12,7 @@ import math
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from glob import glob
+import argparse
 
 def conditional_perplexity(generations_df, model, tokenizer, device='cuda'):
     perplexities = []
@@ -63,29 +64,48 @@ def distinctness(generations_df):
     return np.nanmean(dist1), np.nanmean(dist2), np.nanmean(dist3)
 
 
-@click.command()
-@click.option('--generations_dir', required=True, type=str, help='a jsonl file with generations and attribute scores')
-def main(generations_dir):
+def main():
+
+    parser = argparse.ArgumentParser(description = 'Evaluate the quality of generated sentences')
+    parser.add_argument('--eval_dir', default='', type=str, help='generated eval dir path')
+    parser.add_argument('--eval_file', default='', type=str, help='generated eval file path')
+    args = parser.parse_args()
+
+    print(args.eval_dir)
     frames = []
-    print(glob(generations_dir+"prompt*.jsonl"))
-    if len(glob(generations_dir+"prompt*.jsonl")) > 0:
-        for eval_file in tqdm(sorted(glob(generations_dir+"prompt*.jsonl"))):
+    if os.path.exists(args.eval_file):
+        print(args.eval_file)
+        generations_df = pd.read_json(args.eval_file, lines=True)
+        output_dir = args.eval_file.rsplit('/',1)[0] +'/'
+        print(output_dir)
+        filename = args.eval_file
+
+
+    else:
+
+        assert args.eval_dir != '', "eval_dir must be assigned"
+        output_dir = args.eval_dir
+        filename = ','.join(glob(args.eval_dir+"prompt*.jsonl"))
+
+        print(glob(args.eval_dir+"*.jsonl"))
+        for eval_file in tqdm(glob(args.eval_dir+"prompt*.jsonl")):
             print(eval_file)
             frames.append(pd.read_json(eval_file, lines=True))
         if len(frames)>1:
-            generations_df = pd.concat(frames)
+            df = pd.concat(frames)
         else:
-            generations_df = frames[0]
+            df = frames[0]
+        generations_df = df.reset_index(drop=True)
+        print(df.count())
 
 
     # calculate diversity
     dist1, dist2, dist3 = distinctness(generations_df)
 
     # write output results
-    if os.path.exists(generations_dir + 'eval_results.txt'):
-       fo = open(generations_dir + 'eval_results.txt', 'a')
-    else:
-        fo = open(generations_dir + 'eval_results.txt', 'w')
+    fo = open(output_dir + 'eval_results.txt', 'a')
+    fo.write(f'{filename}\n')
+    fo.flush()
     for i, dist_n in enumerate([dist1, dist2, dist3]):
         fo.write(f'dist-{i+1} = {dist_n}\n')
         fo.flush()

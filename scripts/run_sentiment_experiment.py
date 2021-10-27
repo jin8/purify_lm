@@ -1,3 +1,7 @@
+import sys, os
+sys.path.append(os.path.abspath('generation'))
+sys.path.append(os.path.abspath('utils'))
+sys.path.append(os.path.abspath('modeling'))
 import pickle
 from pathlib import Path
 from typing import Optional, List, Iterable, Dict, Any
@@ -8,11 +12,10 @@ from tqdm import tqdm
 import json
 import os
 from transformers import pipeline
-from generation.generation import gpt2, gpt3, ctrl, pplm, dexperts
-from utils.utils import load_jsonl, batchify, ensure_dir
-
-ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'pplm', 'ctrl']
-
+from generation import gpt2, gpt3, pplm, dexperts, dexperts_gpt3,contrastive_gpt2, style_gpt2
+from utils_fn import load_jsonl, batchify, ensure_dir, set_seed
+ALLOWED_MODELS = ['gpt3', 'gpt2', 'dexperts', 'pplm', 'ctrl', 'contrastive-gpt2',
+'style-gpt2-attr','style-gpt2-all','style-gpt2-one']
 
 def make_generations_col(generations, responses):
     for generation, response in zip(generations, responses):
@@ -40,17 +43,18 @@ def collate(dataset: pd.DataFrame, generations: List[str], responses: Iterable[D
 @click.option('--pos-model', type=str, help="Positive model for DExperts")
 @click.option('--neg-model', type=str, help="Negative model for DExperts")
 @click.option('--positive/--negative', default=True, help="Sentiment for model_type='ctrl' or 'pplm'")
-@click.option('--n', default=25, help='Number of samples to generate for each prompt. When used with --eos')
+@click.option('--num_sentences', default=25, help='Number of samples to generate for each prompt. When used with --eos')
 @click.option('--max-tokens', default=20, help='Number of tokens (usually BPE) to generate for each prompt.')
 @click.option('--batch-size', default=32)
 @click.option('--resume/--no-resume', default=False)
 @click.option('--alpha', default=0.0, help='Hyperparameter for ensemble methods')
 @click.option('--p', default=1.0, type=float, help='Hyperparameter for nucleus (top-p) sampling')
 @click.option('--filter_p', default=0.9, type=float, help='Hyperparameter for truncation of p_base')
+@click.option('--use-past/--no-use-past', default=False)
 
 def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str, model_type: str,
-         pos_model: str, neg_model: str, positive: bool, n: int, max_tokens: int, batch_size: int, resume: bool,
-         alpha: float, p: float, filter_p: float):
+         pos_model: str, neg_model: str, positive: bool, num_sentences: int, max_tokens: int, batch_size: int, resume: bool,
+         alpha: float, p: float, filter_p: float, use_past: bool):
     # Load prompts
     if dataset_file:
         assert not use_eos
@@ -78,17 +82,27 @@ def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str
         raise click.exceptions.MissingParameter('Missing --dataset-file or --use-eos option.')
     print('Prompts:', '\n', prompts)
 
-    # Create output files
-    output_dir = Path(output_dir)
-    generations_file = output_dir / 'generations.jsonl'
-    sentiment_file = output_dir / 'sentiment.jsonl'
-    assert resume or not os.path.exists(generations_file)
-    ensure_dir(output_dir)
-    output_file = output_dir / f'{"eos" if use_eos else "prompted"}_gens_{model_type}.jsonl'
+    if use_past:
+        # Create output files
+        output_dir = Path(output_dir)
+        generations_file = output_dir / f'generations_{model_type}_past.jsonl'
+        sentiment_file = output_dir / f'sentiment_{model_type}_past.jsonl'
+        assert resume or not os.path.exists(generations_file)
+        ensure_dir(output_dir)
+        output_file = output_dir / f'{"eos" if use_eos else "prompted"}_gens_{model_type}_past.jsonl'
 
+    else:
+        # Create output files
+        output_dir = Path(output_dir)
+        generations_file = output_dir / f'generations_{model_type}.jsonl'
+        sentiment_file = output_dir / f'sentiment_{model_type}.jsonl'
+        assert resume or not os.path.exists(generations_file)
+        ensure_dir(output_dir)
+        output_file = output_dir / f'{"eos" if use_eos else "prompted"}_gens_{model_type}.jsonl'
     # Setup model for generation
     if model_type == 'gpt2':
         generations_iter = gpt2(
+            local_rank=-1,
             prompts=prompts,
             max_len=max_tokens,
             num_samples=n,
@@ -99,6 +113,7 @@ def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str
         )
     elif model_type == 'gpt3':
         generations_iter = gpt3(
+            local_rank=-1,
             prompts=prompts,
             max_len=max_tokens,
             num_samples=n,
@@ -109,6 +124,7 @@ def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str
         )
     elif model_type == 'dexperts':
         generations_iter = dexperts(
+            local_rank=-1,
             prompts=prompts,
             max_len=max_tokens,
             num_samples=n,
@@ -139,6 +155,7 @@ def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str
     elif model_type == 'pplm':
         class_label = 2 if positive else 3
         generations_iter = pplm(
+            local_rank=-1,
             prompts=prompts,
             max_len=max_tokens,
             num_samples=n,
@@ -150,8 +167,38 @@ def main(output_dir: str, dataset_file: Optional[str], use_eos: bool, model: str
             model_name_or_path=model,
             out_file=generations_file
         )
+    elif model_type == 'contrastive-gpt2':
+        class_label = 1 if positive else 0
+
+        generations_iter = contrastive_gpt2(
+            local_rank=-1,
+            prompts=prompts,
+            attr=class_label,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file,
+        )
+    elif 'style-gpt2' in model_type:
+        class_label = 1 if positive else 0
+        generations_iter = style_gpt2(
+            local_rank=-1,
+            gen_type=model_type,
+            prompts=prompts,
+            attr=class_label,
+            max_len=max_tokens,
+            num_samples=num_sentences,
+            p=p,
+            batch_size=batch_size,
+            model_name_or_path=model,
+            out_file=generations_file,
+            use_past=use_past
+        )
     else:
         raise NotImplementedError(f'Model {model} not implemented')
+
 
     # read generations
     generations = []

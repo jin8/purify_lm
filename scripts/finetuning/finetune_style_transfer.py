@@ -23,11 +23,14 @@ sys.path.append(os.path.abspath('generation'))
 sys.path.append(os.path.abspath('utils'))
 sys.path.append(os.path.abspath('modeling'))
 
+from typing import Optional, List, Union
+
 import logging
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Optional, List, Union
+from typing import Optional
+from trainer_style_transfer import StyleTransferTrainer as Trainer
 
 from transformers import (
     CONFIG_MAPPING,
@@ -40,13 +43,13 @@ from transformers import (
     LineByLineTextDataset,
     PreTrainedTokenizer,
     TextDataset,
-    Trainer,
     TrainingArguments,
     set_seed,
 )
-from text_dataset import TextAttrDataset
+from text_dataset import LineByLineAttrDataset, TextAttrDataset
 from data_collate import DataCollatorForLanguageModelingWithAttribute
-from contrastive_latent_lm import ContrastiveGPT2
+from style_transfer import StyleGPT2
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,11 +82,10 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
     )
-    sup_contrastive_loss: bool = field(
-        default=False,
-        metadata={"help": "Whether to use supervised contrastive loss"},
-    )
 
+    contrastive_factor: float = field(
+        default=0.0, metadata={"help": "Factor of contrastive modeling loss to impact"}
+    )
 
 @dataclass
 class DataTrainingArguments:
@@ -98,7 +100,10 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
     )
-
+    line_by_line: bool = field(
+        default=False,
+        metadata={"help": "Whether distinct lines of text in the dataset are to be handled as distinct sequences."},
+    )
 
     mlm: bool = field(
         default=False, metadata={"help": "Train with masked-language modeling loss instead of language modeling."}
@@ -115,17 +120,24 @@ class DataTrainingArguments:
             "Default to the model max input length for single sentence inputs (take into account special tokens)."
         },
     )
+    balance: bool = field(
+        default=False, metadata={"help": "balance the dataset distribution"}
+    )
+
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
+
 
 
 def get_dataset(args: DataTrainingArguments, tokenizer: PreTrainedTokenizer, evaluate=False):
     file_paths = args.eval_data_file if evaluate else args.train_data_files
     print(file_paths)
     return TextAttrDataset(
-            tokenizer=tokenizer, file_paths=file_paths, block_size=args.block_size, overwrite_cache=args.overwrite_cache
+            tokenizer=tokenizer, file_paths=file_paths, block_size=args.block_size,
+            balance=args.balance, overwrite_cache=args.overwrite_cache
     )
+
 
 
 def main():
@@ -135,7 +147,8 @@ def main():
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    training_args.prediction_loss_only = True
+    training_args.pretrain_iter = 50
+
     if data_args.eval_data_file is None and training_args.do_eval:
         raise ValueError(
             "Cannot do evaluation without an evaluation data file. Either supply a file to --eval_data_file "
@@ -186,19 +199,25 @@ def main():
         logger.warning("You are instantiating a new config instance from scratch.")
 
     if model_args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir, pad_token='<|endoftext|>')
+        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)#, pad_token='<|pad|>')
     elif model_args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir, pad_token='<|endoftext|>')
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)#, pad_token='<|pad|>')
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
             "and load it from here, using --tokenizer_name"
         )
 
+
     if model_args.model_name_or_path:
-        config.supervised = model_args.sup_contrastive_loss
-        #config.add_cross_attention = True
-        model = ContrastiveGPT2.from_pretrained(
+        config.num_styles = 2
+        config.max_length = data_args.block_size
+        config.hard_negative_weight = 0
+        config.contrastive_factor = model_args.contrastive_factor
+
+        config.pad_token_id = tokenizer.pad_token_id
+        config.eos_token_id = tokenizer.eos_token_id
+        model = StyleGPT2.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -206,9 +225,14 @@ def main():
         )
     else:
         logger.info("Training new model from scratch")
-        config.supervised = model_args.sup_contrastive_loss
-        #config.add_cross_attention = True
-        model = ContrastiveGPT2(config)
+        config.num_styles = 2
+        config.max_length = data_args.block_size
+        config.hard_negative_weight = 0
+        config.contrastive_factor = model_args.contrastive_factor
+
+        config.pad_token_id = tokenizer.pad_token_id
+        config.eos_token_id = tokenizer.eos_token_id
+        model = StyleGPT2(config)
 
     model.resize_token_embeddings(len(tokenizer))
 
@@ -223,19 +247,20 @@ def main():
         # Our input block size will be the max possible for the model
     else:
         data_args.block_size = min(data_args.block_size, tokenizer.model_max_length)
-
+    training_args.learning_rate =  1e-4
     # Get datasets
-
     train_dataset = get_dataset(data_args, tokenizer=tokenizer) if training_args.do_train else None
     eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
     data_collator = DataCollatorForLanguageModelingWithAttribute(
         tokenizer=tokenizer, mlm=data_args.mlm, mlm_probability=data_args.mlm_probability
     )
     print(len(train_dataset))
+
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
+        tokenizer=tokenizer,
         data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset
@@ -259,8 +284,6 @@ def main():
     # Evaluation
     results = {}
     if training_args.do_eval:
-        if training_args.local_rank in [-1, 0]:
-            tokenizer.save_pretrained(training_args.output_dir)
         logger.info("*** Evaluate ***")
 
         eval_output = trainer.evaluate()

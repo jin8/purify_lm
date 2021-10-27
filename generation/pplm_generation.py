@@ -310,8 +310,7 @@ def generate_text_pplm(
     loss_in_time = []
 
     for i in trange(length, desc='Generating with PPLM', disable=True):
-        model.zero_grad()
-        classifier.zero_grad()
+
         # Get past/probs for current output, except for last word
         # Note that GPT takes 2 inputs: past + current_token
 
@@ -405,9 +404,8 @@ def generate_text_pplm(
 
         # update context/output_so_far appending the new token
         output_so_far = last if output_so_far is None else torch.cat((output_so_far, last), dim=1)
-        torch.cuda.empty_cache()
         # print(tokenizer.decode(output_so_far.tolist()[0]))
-
+    torch.cuda.empty_cache()
     return output_so_far, unpert_discrim_loss, loss_in_time
 
 
