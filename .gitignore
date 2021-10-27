@@ -21,3 +21,4 @@ notebooks/temp_pplm_eval.ipynb
 notebooks/utils.ipynb
 notebooks/reviz_illustrations.ipynb
 our_generations
+runs/
