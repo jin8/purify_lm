@@ -12,8 +12,13 @@ import torch
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description = 'Evaluate the generated 25 sentences')
+<<<<<<< HEAD
     parser.add_argument('--eval_file', default='/v6/myung/iclr/purify_lm/generations/toxicity/dexperts/small_experts/prompted_gens_dexperts.jsonl', type=str, help='generated eval file path')
     parser.add_argument('--num_samples', default=10, type=int, help='num of generated sentence')
+=======
+    parser.add_argument('--eval_file', default='generations/toxicity/pplm/prompted_gens_pplm.jsonl', type=str, help='generated eval file path')
+    parser.add_argument('--num_samples', default=25, type=int, help='num of generated sentence')
+>>>>>>> minseon
     args = parser.parse_args()
     #import json
     #with open(args.eval_file, 'r') as datafile:

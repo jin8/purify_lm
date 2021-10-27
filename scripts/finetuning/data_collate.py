@@ -62,10 +62,22 @@ class DataCollatorForLanguageModelingWithAttribute(DataCollatorMixin):
     pad_to_multiple_of: Optional[int] = None
     tf_experimental_compile: bool = False
     return_tensors: str = "pt"
+<<<<<<< Updated upstream
+    text_att_flag: bool = False
+
+    def torch_call(self, raw_batch: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+        # Handle dict or lists with proper padding and conversion to tensor.
+        if self.text_att_flag:
+            examples, lens, attr_labels, text_att = map(list, zip(*raw_batch))
+        else:
+            examples, lens, attr_labels = map(list, zip(*raw_batch))
+=======
 
     def torch_call(self, raw_batch: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         # Handle dict or lists with proper padding and conversion to tensor.
         examples, lens, attr_labels = map(list, zip(*raw_batch))
+>>>>>>> Stashed changes
+
 
         if isinstance(examples[0], (dict, BatchEncoding)):
             batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
@@ -90,8 +102,14 @@ class DataCollatorForLanguageModelingWithAttribute(DataCollatorMixin):
         lens = torch.stack(lens, dim=0)
 
         attention_mask = torch.arange(max_len)[None, :] < lens[:, None]
-        batch['attention_mask'] = attention_mask.long()
-        batch['attr_labels'] = torch.stack(attr_labels, dim=0)
+        batch["attention_mask"] = attention_mask.long()
+        batch["attr_labels"] = torch.stack(attr_labels, dim=0)
+<<<<<<< Updated upstream
+        if self.text_att_flag:
+            from torch.nn.utils.rnn import pad_sequence
+            batch["attr_ids"] = pad_sequence(text_att, padding_value=0, batch_first=True)
+=======
+>>>>>>> Stashed changes
 
         return batch
 

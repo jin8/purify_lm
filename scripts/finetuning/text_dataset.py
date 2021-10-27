@@ -287,8 +287,7 @@ class LineByLineAttrDataset(Dataset):
                     logger.info(f"Creating features from dataset file at {directory}")
                     self.file2attr[file_path] = self.attr
                     with open(file_path, encoding="utf-8") as f:
-                        texts = f.read().split("\n")
-
+                        texts = f.read().split("\n") #TODO: toxicity일때는 split("\n")
 
                     tokenized_texts = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) for text in texts if text != '']
                     tokenized_texts = tokenized_texts[:data_size]     # truncate to the first data_size tokens
@@ -330,3 +329,4 @@ class LineByLineAttrDataset(Dataset):
         return (torch.tensor(self.examples[i], dtype=torch.long),
             torch.tensor(self.lens[i], dtype=torch.long),
             torch.tensor(self.attr_labels[i], dtype=torch.long))
+
