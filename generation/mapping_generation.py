@@ -7,6 +7,7 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2PreTrainedModel
 from transformers import BertTokenizer
 from transformers.generation_utils import top_k_top_p_filtering
 import sys, os
+
 sys.path.append(os.path.abspath('modeling'))
 from mapping_lm import MappingGPT2
 from utils_fn import set_seed
@@ -17,17 +18,18 @@ MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
 class MappingGeneration:
     STOP_TOKEN = "<|endoftext|>"
 
-    def __init__(self, config, approach: str='cont_gpt', model: Union[str, Path] = 'gpt2',
-                past_key_values: bool = False, end_token_prediction=False, logit=False, softmax_logit=False, logit_type=0, 
-                tokenizer: str = 'gpt2', seed: int = 42, supervised=False, local_rank=-1):
+    def __init__(self, config, approach: str = 'cont_gpt', model: Union[str, Path] = 'gpt2',
+                 past_key_values: bool = False, end_token_prediction=False, logit=False, softmax_logit=False,
+                 logit_type=0, mixup_loss=False, alpha=1.0,
+                 tokenizer: str = 'gpt2', seed: int = 42, supervised=False, local_rank=-1):
         self.past_key_values = past_key_values
 
-        #logit control
+        # logit control
         self.logit = logit
-        self.softmax_logt = softmax_logit
+        self.softmax_logit = softmax_logit
         self.logit_type = logit_type
         if (not self.logit) and self.softmax_logit:
-            assert('wrong arguments')
+            assert ('wrong arguments')
         # Set up device
         if local_rank == -1:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -38,6 +40,8 @@ class MappingGeneration:
 
         self.approach = approach
         # Set up model
+        self.alpha = alpha
+        config.mixup_loss = mixup_loss
 
         if isinstance(model, Path) or isinstance(model, str):
             model = MappingGPT2.from_pretrained(
@@ -47,7 +51,7 @@ class MappingGeneration:
                 cache_dir=config.cache_dir,
             )
         else:
-            assert()
+            assert ()
 
         self.model = model.to(self.device)
 
@@ -58,9 +62,9 @@ class MappingGeneration:
         # included in the vocab size.
         self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer, pad_token=self.STOP_TOKEN)
 
-        #self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer, pad_token='<|pad|>')
-        #self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        #self.model.resize_token_embeddings(len(self.tokenizer))
+        # self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer, pad_token='<|pad|>')
+        # self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        # self.model.resize_token_embeddings(len(self.tokenizer))
         self.supervised = supervised
 
     def __repr__(self):
@@ -96,20 +100,42 @@ class MappingGeneration:
             neg_labels = torch.ones(batch_size, dtype=torch.long, device=self.device)
         with torch.no_grad():
             for step in range(max_len):
-                if past_key_values:
-                    outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values = past, use_cache=True, gen_approach=self.approach,
-                                     attr_labels = attr_labels,
-                                          **model_kwargs)
+                if self.past_key_values:
+                    if step > 0:
+                        outputs = self.model(input_ids[:, -1].unsqueeze(-1),
+                                             attention_mask=attention_mask[:, -1].unsqueeze(-1),
+                                             position_ids=position_ids[:, -1].unsqueeze(-1), past_key_values=past,
+                                             use_cache=True, gen_approach=self.approach,
+                                             attr_labels=attr_labels,
+                                             **model_kwargs)
+
+                    else:
+                        outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids,
+                                             past_key_values=past, use_cache=True, gen_approach=self.approach,
+                                             attr_labels=attr_labels,
+                                             **model_kwargs)
                     if self.logit:
-                        neg_outputs = self.model(input_ids, attention_mask =attention_mask, position_ids=position_ids, past_key_values = past, use_cache=True, gen_approach=self.approach, 
-                                     attr_labels = neg_labels, **model_kwargs)
+                        if step > 0:
+                            neg_outputs = self.model(input_ids[:, -1].unsqueeze(-1),
+                                                     attention_mask=attention_mask[:, -1].unsqueeze(-1),
+                                                     position_ids=position_ids[:, -1].unsqueeze(-1),
+                                                     past_key_values=past, use_cache=True, gen_approach=self.approach,
+                                                     attr_labels=neg_labels, **model_kwargs)
+
+                        else:
+                            neg_outputs = self.model(input_ids, attention_mask=attention_mask,
+                                                     position_ids=position_ids, past_key_values=past, use_cache=True,
+                                                     gen_approach=self.approach,
+                                                     attr_labels=neg_labels, **model_kwargs)
                 else:
-                    outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids, use_cache=True, gen_approach=self.approach,
-                                     attr_labels = attr_labels,
-                                          **model_kwargs)
+                    outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids,
+                                         use_cache=True, gen_approach=self.approach,
+                                         attr_labels=attr_labels,
+                                         **model_kwargs)
                     if self.logit:
-                        neg_outputs = self.model(input_ids, attention_mask =attention_mask, position_ids=position_ids, use_cache=True, gen_approach=self.approach, 
-                                     attr_labels = neg_labels, **model_kwargs)
+                        neg_outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids,
+                                                 use_cache=True, gen_approach=self.approach,
+                                                 attr_labels=neg_labels, **model_kwargs)
                 logits, past = outputs[0], outputs[1]
                 if self.logit:
                     neg_logits = neg_outputs[0]
@@ -129,18 +155,26 @@ class MappingGeneration:
                         next_token_logits = logits[:, -1, :]
 
                 if self.logit:
-                    if softmax_logit:
-                        pos_token_logits = F.softmax(pos_token_logits)
-                        neg_token_logits = F.softmax(neg_token_logits)
+                    if self.softmax_logit:
+                        pos_token_logits = F.softmax(pos_token_logits, dim=-1)
+                        neg_token_logits = F.softmax(neg_token_logits, dim=-1)
 
-                    if self.logit_type==0: #subtract positive - negative
+                    if self.logit_type == 0:  # subtract positive - negative
                         next_token_logits = pos_token_logits - neg_token_logits
-                    elif self.logit_type==1: #positive - 0.5*negative
-                        next_token_logits = pos_token_logits - 0.5*neg_token_logits
-                    elif self.logit_type==3: #subtract only negative
-                        masked_logit = (pos_token_logits- neg_token_logits)<0
-                        next_token_logits = pos_token_logits + masked_logit*(pos_token_logits - neg_token_logits)
-                    
+                    elif self.logit_type == 1:  # positive - 0.5*negative
+                        next_token_logits = pos_token_logits - 0.5 * neg_token_logits
+                    elif self.logit_type == 2:
+                        masked_logit = (pos_token_logits - neg_token_logits) < 0
+                        next_token_logits = pos_token_logits + 1.5 * masked_logit * (
+                                    pos_token_logits - neg_token_logits)
+                    elif self.logit_type == 3:  # subtract only negative
+                        masked_logit = (pos_token_logits - neg_token_logits) < 0
+                        next_token_logits = pos_token_logits + masked_logit * (pos_token_logits - neg_token_logits)
+                    elif self.logit_type == 4:
+                        masked_logit = (pos_token_logits - neg_token_logits) < 0
+                        next_token_logits = pos_token_logits + self.alpha * masked_logit * (
+                                    pos_token_logits - neg_token_logits)
+
                 if sample:
                     # Temperature (higher temperature => more likely to sample low probability tokens)
                     if temperature != 1.0:

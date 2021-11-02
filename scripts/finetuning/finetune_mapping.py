@@ -19,6 +19,7 @@ GPT and GPT-2 are fine-tuned using a causal language modeling (CLM) loss while B
 using a masked language modeling (MLM) loss.
 """
 import sys, os
+
 sys.path.append(os.path.abspath('generation'))
 sys.path.append(os.path.abspath('utils'))
 sys.path.append(os.path.abspath('modeling'))
@@ -47,8 +48,8 @@ from transformers import (
 from text_dataset import TextAttrDataset
 from data_collate import DataCollatorForLanguageModelingWithAttribute
 from mapping_lm import MappingGPT2
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -99,6 +100,12 @@ class ModelArguments:
         metadata={"help": "Whether to use KL loss"},
     )
 
+    mixup_loss: bool = field(
+        default=False,
+        metadata={"help": "using mixup in hidden states"}
+    )
+
+
 @dataclass
 class DataTrainingArguments:
     """
@@ -113,7 +120,6 @@ class DataTrainingArguments:
         metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
     )
 
-
     mlm: bool = field(
         default=False, metadata={"help": "Train with masked-language modeling loss instead of language modeling."}
     )
@@ -125,14 +131,13 @@ class DataTrainingArguments:
         default=-1,
         metadata={
             "help": "Optional input sequence length after tokenization."
-            "The training dataset will be truncated in block of this size for training."
-            "Default to the model max input length for single sentence inputs (take into account special tokens)."
+                    "The training dataset will be truncated in block of this size for training."
+                    "Default to the model max input length for single sentence inputs (take into account special tokens)."
         },
     )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
-
 
     balance: bool = field(
         default=False, metadata={"help": "balance the dataset distribution"}
@@ -142,11 +147,12 @@ class DataTrainingArguments:
 def get_dataset(args: DataTrainingArguments, tokenizer: PreTrainedTokenizer, evaluate=False):
     file_paths = args.eval_data_file if evaluate else args.train_data_files
     print(file_paths)
-    
+
     return TextAttrDataset(
-            tokenizer=tokenizer, file_paths=file_paths, block_size=args.block_size,
-            balance=args.balance, overwrite_cache=args.overwrite_cache
+        tokenizer=tokenizer, file_paths=file_paths, block_size=args.block_size,
+        balance=args.balance, overwrite_cache=args.overwrite_cache
     )
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -157,6 +163,7 @@ def main():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     training_args.prediction_loss_only = True
     data_args.ablation = model_args.ablation
+
     if data_args.eval_data_file is None and training_args.do_eval:
         raise ValueError(
             "Cannot do evaluation without an evaluation data file. Either supply a file to --eval_data_file "
@@ -164,10 +171,10 @@ def main():
         )
 
     if (
-        os.path.exists(training_args.output_dir)
-        and os.listdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
+            os.path.exists(training_args.output_dir)
+            and os.listdir(training_args.output_dir)
+            and training_args.do_train
+            and not training_args.overwrite_output_dir
     ):
         raise ValueError(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
@@ -207,9 +214,11 @@ def main():
         logger.warning("You are instantiating a new config instance from scratch.")
 
     if model_args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)#, pad_token='<|pad|>')
+        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name,
+                                                  cache_dir=model_args.cache_dir)  # , pad_token='<|pad|>')
     elif model_args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)#, pad_token='<|pad|>')
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path,
+                                                  cache_dir=model_args.cache_dir)  # , pad_token='<|pad|>')
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
@@ -222,6 +231,7 @@ def main():
         config.ablation = model_args.ablation
         config.alpha = model_args.alpha
         config.mse_loss = model_args.mse_loss
+        config.mixup_loss = model_args.mixup_loss
         model = MappingGPT2.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -232,6 +242,7 @@ def main():
         config.ablation = model_args.ablation
         config.alpha = model_args.alpha
         config.kl_loss = model_args.kl_loss
+        config.mixup_loss = model_args.mixup_loss
         logger.info("Training new model from scratch")
         config.supervised = model_args.sup_contrastive_loss
         config.add_cross_attention = True
@@ -253,7 +264,7 @@ def main():
 
     train_dataset = get_dataset(data_args, tokenizer=tokenizer) if training_args.do_train else None
     eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
-    
+
     data_collator = DataCollatorForLanguageModelingWithAttribute(
         tokenizer=tokenizer, mlm=data_args.mlm, mlm_probability=data_args.mlm_probability
     )
@@ -265,7 +276,7 @@ def main():
         data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset
-        #prediction_loss_only=True,
+        # prediction_loss_only=True,
     )
 
     # Training

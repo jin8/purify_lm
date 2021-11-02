@@ -107,7 +107,6 @@ class TextAttrDataset(Dataset):
         self.file2attr = {}
         self.attr = 0
         print(file_paths)
-        self.validate = []
         for file_path in file_paths:
             print("for loop")
             assert os.path.isfile(file_path), f"Input file path {file_path} not found"
@@ -116,14 +115,24 @@ class TextAttrDataset(Dataset):
             block_size = block_size - tokenizer.num_special_tokens_to_add(pair=False)
 
             directory, filename = os.path.split(file_path)
-            cached_features_file = os.path.join(
-                cache_dir if cache_dir is not None else directory,
-                "cached_lm_{}_{}_{}".format(
-                    tokenizer.__class__.__name__,
-                    str(block_size),
-                    filename,
-                ),
-            )
+            if balance:
+	            cached_features_file = os.path.join(
+    	            cache_dir if cache_dir is not None else directory,
+        	        "cached_lm_balance_{}_{}_{}".format(
+            	        tokenizer.__class__.__name__,
+                	    str(block_size),
+                    	filename,
+                	),
+            	)
+            else:
+            	cached_features_file = os.path.join(
+    	            cache_dir if cache_dir is not None else directory,
+        	        "cached_lm_{}_{}_{}".format(
+            	        tokenizer.__class__.__name__,
+                	    str(block_size),
+                    	filename,
+                	),
+            	)
 
             # Make sure only the first process in distributed training processes the dataset,
             # and the others will use the cache.
@@ -148,10 +157,23 @@ class TextAttrDataset(Dataset):
                     with open(file_path, encoding="utf-8") as f:
                         text = f.read()
                     tokenized_text = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-                    print(file_path,len(tokenized_text))
-                    if data_size is not None:
-                        tokenized_text = tokenized_text[:data_size]
-
+                    tokenized_text = tokenized_text[:data_size]
+                    """
+                    tokenized_texts = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) for text in texts]
+                    tokenized_texts = tokenized_texts[:data_size]     # truncate to the first data_size tokens
+                    print(file_path)
+                    print(len(tokenized_texts), data_size)
+                    for tokenized_text in tokenized_texts:
+                        #print(len(list(range(0, len(tokenized_text) - block_size + 1, block_size))),list(range(0, len(tokenized_text) - block_size + 1, block_size)))
+                        print(len(tokenized_text))
+                        if len(tokenized_text) <= block_size:
+                            self.examples.append(
+                                tokenizer.build_inputs_with_special_tokens(tokenized_text)
+                            )
+                            self.lens.append(len(tokenized_text))
+                            self.attr_labels.append(self.attr)
+                        else:
+                        """
                     for i in range(0, len(tokenized_text) - block_size + 1, block_size):  # Truncate in block of block_size
                         #self.examples.append(
                         #    tokenizer.build_inputs_with_special_tokens(tokenized_text[i : i + block_size])
@@ -166,10 +188,6 @@ class TextAttrDataset(Dataset):
                             self.examples_by_labels[self.attr] = [
                                 tokenizer.build_inputs_with_special_tokens(tokenized_text[i : i + block_size])
                             ]
-                        if len(tokenized_text[i : i + block_size]) < block_size:
-                            break
-                        self.validate.append(tokenizer.build_inputs_with_special_tokens(tokenized_text[i : i + block_size]))
-
                     # Note that we are losing the last truncated example here for the sake of simplicity (no padding)
                     # If your dataset is small, first you should loook for a bigger one :-) and second you
                     # can change this behavior by adding (model specific) padding.
@@ -182,7 +200,6 @@ class TextAttrDataset(Dataset):
                     )
                     self.attr += 1
                 print(file_path, len(self.examples))
-                print(file_path, len(self.validate))
 
         num_of_examples = {}
         if not balance:
@@ -287,15 +304,11 @@ class LineByLineAttrDataset(Dataset):
                     logger.info(f"Creating features from dataset file at {directory}")
                     self.file2attr[file_path] = self.attr
                     with open(file_path, encoding="utf-8") as f:
-                        texts = f.read().split("\n") #TODO: toxicity일때는 split("\n")
+                        texts = f.read()
 
                     tokenized_texts = [tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text)) for text in texts if text != '']
                     tokenized_texts = tokenized_texts[:data_size]     # truncate to the first data_size tokens
-                    print(file_path)
-                    print(len(tokenized_texts), data_size)
                     for tokenized_text in tokenized_texts:
-                        #print(len(list(range(0, len(tokenized_text) - block_size + 1, block_size))),list(range(0, len(tokenized_text) - block_size + 1, block_size)))
-                        print(len(tokenized_text))
                         if len(tokenized_text) <= block_size:
                             self.examples.append(
                                 tokenizer.build_inputs_with_special_tokens(tokenized_text)
@@ -329,4 +342,3 @@ class LineByLineAttrDataset(Dataset):
         return (torch.tensor(self.examples[i], dtype=torch.long),
             torch.tensor(self.lens[i], dtype=torch.long),
             torch.tensor(self.attr_labels[i], dtype=torch.long))
-
